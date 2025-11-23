@@ -1,0 +1,131 @@
+#define TINY_GSM_MODEM_SIM800
+
+#include <HCSR04.h>
+#include <TinyGsmClient.h>
+#include <SoftwareSerial.h>
+
+// -----------------------------
+// PINOS DO SENSOR ULTRASSÔNICO
+// -----------------------------
+#define TRIG_PIN 9
+#define ECHO_PIN 8
+UltraSonicDistanceSensor sensor(TRIG_PIN, ECHO_PIN);
+
+// -----------------------------
+// MÓDULO GSM (SIM800L)
+// -----------------------------
+SoftwareSerial SerialGSM(2, 3); // RX=2, TX=3
+#define TINY_GSM_MODEM_SIM800
+TinyGsm modem(SerialGSM);
+
+// -----------------------------
+String telefone = "5548991851286";
+
+// Estados de alerta
+bool alerta15 = false;
+bool alerta10 = false;
+bool alerta5  = false;
+
+// -----------------------------
+// Função para média de 5 leituras
+// -----------------------------
+float medirDistancia() {
+  float soma = 0;
+  for (int i = 0; i < 5; i++) {
+    soma += sensor.measureDistanceCm();
+    delay(100);
+  }
+  return soma / 5.0;
+}
+
+// -----------------------------
+void enviarSMS(String msg) {
+  Serial.println("Enviando SMS...");
+  modem.sendSMS(telefone, msg);
+  Serial.println("SMS enviado.");
+}
+
+// -----------------------------
+void setup() {
+  Serial.begin(9600);
+  SerialGSM.begin(9600);
+
+  Serial.println("Iniciando módulo SIM800L…");
+  delay(3000);
+
+  modem.restart();
+
+  Serial.println("Conectando à rede...");
+  while (!modem.isNetworkConnected()) {
+    Serial.println("Aguardando registro...");
+    delay(2000);
+  }
+
+  Serial.println("Conectado à rede GSM.");
+}
+
+// -----------------------------
+void loop() {
+  float distancia = medirDistancia();
+
+  Serial.print("Distância: ");
+  Serial.print(distancia);
+  Serial.println(" cm");
+
+  // -----------------------------
+  // RESET DOS ALERTAS SE BAIXOU
+  // -----------------------------
+  if (distancia > 20) {
+    alerta15 = false;
+    alerta10 = false;
+    alerta5  = false;
+    return; // volta ao loop
+  }
+
+  // -----------------------------
+  // ALERTA 15 cm COM WHILE
+  // -----------------------------
+  if (distancia <= 15 && !alerta15) {
+
+    while (distancia <= 15 && distancia > 10) {
+      enviarSMS("ALERTA: O nível da água está subindo (15 cm).");
+
+      alerta15 = true;
+
+      delay(120000); // espera 120 segundos
+      distancia = medirDistancia();
+    }
+  }
+
+  // -----------------------------
+  // ALERTA 10 cm COM WHILE
+  // -----------------------------
+  if (distancia <= 10 && !alerta10) {
+
+    while (distancia <= 10 && distancia > 5) {
+      enviarSMS("ALERTA: O nível continua subindo (10 cm).");
+
+      alerta10 = true;
+
+      delay(120000);
+      distancia = medirDistancia();
+    }
+  }
+
+  // -----------------------------
+  // ALERTA 5 cm COM WHILE
+  // -----------------------------
+  if (distancia <= 5 && !alerta5) {
+
+    while (distancia <= 5) {
+      enviarSMS("ALERTA CRÍTICO: Nível extremamente alto (5 cm)!");
+
+      alerta5 = true;
+
+      delay(120000);
+      distancia = medirDistancia();
+    }
+  }
+
+  delay(500);
+}
